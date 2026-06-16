@@ -344,6 +344,32 @@ body[data-page="soluciones"] .card {
   color: var(--brand-primary-dark);
 }
 
+.card-meta {
+  margin: 8px 0 14px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.publication-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 20px;
+  align-items: start;
+}
+
+.publication-card-preview {
+  display: grid;
+  gap: 12px;
+  place-items: start;
+}
+
+.publication-card-preview img {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid #e6ebef;
+  box-shadow: var(--shadow);
+}
+
 .pill {
   display: inline-block;
   margin-top: 10px;
@@ -586,6 +612,10 @@ body[data-page="soluciones"] .card {
 
   .grid-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .publication-card {
+    grid-template-columns: 1fr;
   }
 
   .leader {
