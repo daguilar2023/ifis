@@ -149,6 +149,10 @@
   z-index: 2000;
 }
 
+.admin-modal[hidden] {
+  display: none !important;
+}
+
 .admin-modal-card {
   width: min(440px, 100%);
   background: #fff;
