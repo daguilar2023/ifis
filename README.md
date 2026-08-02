@@ -1,40 +1,81 @@
-# IFIS publications admin setup
+# IFIS website + publications admin (Supabase)
 
-## Local development
+Cloudflare hosts the website.  
+Supabase stores publication metadata + PDF files (**no Cloudflare R2 / no credit card needed for R2**).
+
+## What you need to do in Supabase (click-by-click)
+
+### 1) Create free project
+1. Go to [https://supabase.com](https://supabase.com)
+2. Click **Start your project** / **Sign in**
+3. Click **New project**
+4. Choose organization (or create one)
+5. Fill:
+   - **Name:** `ifis`
+   - **Database password:** create a strong password and save it
+   - **Region:** closest to Chile/LatAm if available
+6. Click **Create new project**
+7. Wait until project is ready
+
+> If Supabase asks for a credit card, stop and tell me — we’ll use another free option.
+
+### 2) Create database tables
+1. Left sidebar → **SQL** → **SQL Editor**
+2. Click **New query**
+3. Open this file from the repo: `supabase/schema.sql`
+4. Copy all SQL and paste into the editor
+5. Click **Run**
+
+### 3) Create storage bucket
+1. Left sidebar → **Storage**
+2. Click **New bucket**
+3. Name: `publications`
+4. Turn **Public bucket** ON (so PDFs can be opened on the website)
+5. Click **Create bucket**
+
+### 4) Copy API keys
+1. Left sidebar → **Project Settings** (gear)
+2. Click **API**
+3. Copy:
+   - **Project URL**
+   - **service_role** key (secret — never share publicly)
+
+### 5) Put keys in local `.dev.vars`
+In the project folder, create/edit `.dev.vars`:
 
 ```bash
-cp .dev.vars.example .dev.vars
-# edit ADMIN_PASSWORD and SESSION_SECRET
+ADMIN_PASSWORD=choose-a-strong-password-for-Ilis
+SESSION_SECRET=another-long-random-string
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=paste-service-role-key-here
+```
+
+### 6) Seed existing PDFs
+```bash
 npm install
-npm run db:migrate:local
-npm run seed:local
+npm run seed
+```
+
+### 7) Run locally
+```bash
 npm run dev
 ```
 
-- Public site: http://localhost:8787
-- Hidden admin: http://localhost:8787/admin/
-- Publicaciones loads from D1 (newest first) with dates
+- Website: http://localhost:8787  
+- Admin: http://localhost:8787/admin/
 
-## Remote Cloudflare (one-time)
+## Production secrets (Cloudflare Worker)
+When deploying later:
 
-1. `npx wrangler login`
-2. `npx wrangler d1 create ifis-publications`  
-   Copy the `database_id` into `wrangler.jsonc`
-3. `npx wrangler r2 bucket create ifis-docs`
-4. `npm run db:migrate:remote`
-5. `npm run seed:remote`
-6. Set secrets (do not commit):
-   ```bash
-   npx wrangler secret put ADMIN_PASSWORD
-   npx wrangler secret put SESSION_SECRET
-   ```
-7. Deploy when ready: `npm run deploy`  
-   (or merge to `main` if Git auto-deploy is connected)
+```bash
+npx wrangler secret put ADMIN_PASSWORD
+npx wrangler secret put SESSION_SECRET
+npx wrangler secret put SUPABASE_URL
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npm run deploy
+```
 
-## Admin features
-
-- Login with shared password (HttpOnly Secure cookie + CSRF)
-- Upload PDF + optional preview image
-- Edit title/description
-- Delete with confirmation
-- `/admin` is not linked in the public navigation
+## Notes
+- `/admin` is hidden (not in public nav)
+- Publicaciones sorts newest → oldest and shows date added
+- Existing PDFs are seeded with today’s date; new uploads get the real upload date

@@ -1,23 +1,50 @@
 #!/usr/bin/env node
 /**
- * Seeds existing PDFs from /publicaciones into D1 + R2.
+ * Seeds existing PDFs from /publicaciones into Supabase Storage + Postgres.
+ *
+ * Requires env vars (or .dev.vars):
+ *   SUPABASE_URL
+ *   SUPABASE_SERVICE_ROLE_KEY
+ *
  * Usage:
- *   node scripts/seed-publications.mjs --local
- *   node scripts/seed-publications.mjs --remote
+ *   node scripts/seed-publications.mjs
  */
-import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readdirSync, existsSync } from "node:fs";
-import { basename, join, extname, dirname } from "node:path";
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { join, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const pubsDir = join(root, "publicaciones");
 const thumbsDir = join(root, "media", "thumbs");
-const remote = process.argv.includes("--remote");
-const flag = remote ? "--remote" : "--local";
+const BUCKET = "publications";
 const today = new Date().toISOString();
+
+function loadEnvFile() {
+  const path = join(root, ".dev.vars");
+  if (!existsSync(path)) return;
+  const text = readFileSync(path, "utf8");
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const idx = trimmed.indexOf("=");
+    if (idx === -1) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const value = trimmed.slice(idx + 1).trim();
+    if (!process.env[key]) process.env[key] = value;
+  }
+}
+
+loadEnvFile();
+
+const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in env/.dev.vars");
+  process.exit(1);
+}
 
 const DESCRIPTIONS = {
   "IFRS 18 - Decisión de Agenda del Comité de Interpretaciones (marzo 2026) FINAL.pdf":
@@ -41,98 +68,115 @@ const THUMB_MAP = {
     "ifrs18-rendimiento-thumb.png",
 };
 
-function run(cmd, args, opts = {}) {
-  const result = spawnSync(cmd, args, {
-    cwd: root,
-    encoding: "utf8",
-    stdio: ["pipe", "pipe", "pipe"],
-    ...opts,
-  });
-  if (result.status !== 0) {
-    console.error(result.stdout);
-    console.error(result.stderr);
-    throw new Error(`Command failed: ${cmd} ${args.join(" ")}`);
-  }
-  return result.stdout;
+function normalizeName(name) {
+  return name.normalize("NFC");
 }
 
 function titleFromFilename(name) {
   return name.replace(/\.pdf$/i, "").replace(/\s+/g, " ").trim();
 }
 
-function normalizeName(name) {
-  // Handle NFC/NFD differences in filenames
-  return name.normalize("NFC");
+async function supabase(path, { method = "GET", headers = {}, body, rawBody } = {}) {
+  const response = await fetch(`${SUPABASE_URL}${path}`, {
+    method,
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      ...headers,
+    },
+    body: rawBody !== undefined ? rawBody : body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  if (!response.ok) {
+    throw new Error(`${method} ${path} -> ${response.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`);
+  }
+  return data;
 }
 
-function findPdfFiles() {
-  return readdirSync(pubsDir)
+async function uploadObject(path, filePath, contentType) {
+  const bytes = readFileSync(filePath);
+  await supabase(`/storage/v1/object/${BUCKET}/${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": contentType,
+      "x-upsert": "true",
+    },
+    rawBody: bytes,
+  });
+}
+
+async function main() {
+  const files = readdirSync(pubsDir)
     .filter((f) => extname(f).toLowerCase() === ".pdf")
     .map((f) => normalizeName(f));
-}
 
-function sqlEscape(value) {
-  return String(value).replaceAll("'", "''");
-}
-
-function main() {
-  const files = findPdfFiles();
   if (!files.length) {
-    console.log("No PDFs found in publicaciones/");
+    console.log("No PDFs found.");
     return;
   }
 
-  console.log(`Seeding ${files.length} publications (${remote ? "remote" : "local"})...`);
+  console.log(`Seeding ${files.length} publications into Supabase...`);
 
-  // Clear existing rows for a clean seed of known local catalog
-  run("npx", ["wrangler", "d1", "execute", "ifis-publications", flag, "--command", "DELETE FROM publications;"]);
+  // Clear previous catalog rows (keeps auth helper tables)
+  await supabase("/rest/v1/publications?id=neq.00000000-0000-0000-0000-000000000000", {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" },
+  });
 
   for (const file of files) {
-    const id = randomUUID();
-    const abs = join(pubsDir, file);
-    // Resolve actual filesystem name if normalization differs
     const actual = readdirSync(pubsDir).find((f) => normalizeName(f) === file) || file;
     const absActual = join(pubsDir, actual);
+    const id = randomUUID();
     const title = titleFromFilename(actual);
     const description =
       DESCRIPTIONS[actual] ||
       DESCRIPTIONS[file] ||
       "Publicación técnica de IFIS Consultores Auditores.";
-    const pdfKey = `pdfs/${id}/${actual}`;
+    const pdfPath = `pdfs/${id}/${actual}`;
+
+    console.log(`- ${actual}`);
+    await uploadObject(pdfPath, absActual, "application/pdf");
+
+    let thumbPath = null;
     const thumbFile = THUMB_MAP[actual] || THUMB_MAP[file];
-    let thumbKey = null;
-
-    console.log(`- Uploading PDF: ${actual}`);
-    run("npx", ["wrangler", "r2", "object", "put", `ifis-docs/${pdfKey}`, `--file=${absActual}`, `--content-type=application/pdf`, flag]);
-
     if (thumbFile) {
-      const thumbPath = join(thumbsDir, thumbFile);
-      if (existsSync(thumbPath)) {
-        thumbKey = `thumbs/${id}/${thumbFile}`;
-        console.log(`  + thumb: ${thumbFile}`);
-        run("npx", [
-          "wrangler",
-          "r2",
-          "object",
-          "put",
-          `ifis-docs/${thumbKey}`,
-          `--file=${thumbPath}`,
-          `--content-type=image/png`,
-          flag,
-        ]);
+      const thumbAbs = join(thumbsDir, thumbFile);
+      if (existsSync(thumbAbs)) {
+        thumbPath = `thumbs/${id}/${thumbFile}`;
+        await uploadObject(thumbPath, thumbAbs, "image/png");
       }
     }
 
-    const sql = `INSERT INTO publications (id, title, description, created_at, updated_at, pdf_key, thumb_key, pdf_filename)
-      VALUES ('${sqlEscape(id)}', '${sqlEscape(title)}', '${sqlEscape(description)}', '${sqlEscape(today)}', '${sqlEscape(today)}', '${sqlEscape(pdfKey)}', ${
-        thumbKey ? `'${sqlEscape(thumbKey)}'` : "NULL"
-      }, '${sqlEscape(actual)}');`;
-
-    run("npx", ["wrangler", "d1", "execute", "ifis-publications", flag, "--command", sql]);
+    await supabase("/rest/v1/publications", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: {
+        id,
+        title,
+        description,
+        created_at: today,
+        updated_at: today,
+        pdf_path: pdfPath,
+        thumb_path: thumbPath,
+        pdf_filename: actual,
+      },
+    });
   }
 
   console.log("Seed complete.");
-  console.log(`created_at set to ${today} for all seeded documents.`);
+  console.log(`created_at set to ${today}`);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

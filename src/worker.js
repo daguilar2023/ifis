@@ -1,9 +1,10 @@
 const SESSION_COOKIE = "ifis_admin_session";
-const SESSION_TTL_MS = 1000 * 60 * 60 * 8; // 8 hours
+const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const LOGIN_WINDOW_MS = 1000 * 60 * 15;
 const LOGIN_MAX_FAILS = 8;
 const LOGIN_LOCK_MS = 1000 * 60 * 15;
 const CSRF_TTL_MS = 1000 * 60 * 60 * 8;
+const BUCKET = "publications";
 
 const encoder = new TextEncoder();
 
@@ -74,13 +75,49 @@ async function hmacSign(secret, payload) {
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function getSecrets(env) {
+function getConfig(env) {
   const password = env.ADMIN_PASSWORD;
   const sessionSecret = env.SESSION_SECRET || env.ADMIN_PASSWORD;
-  if (!password || !sessionSecret) {
-    throw new Error("Missing ADMIN_PASSWORD or SESSION_SECRET");
+  const supabaseUrl = String(env.SUPABASE_URL || "").replace(/\/$/, "");
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!password || !sessionSecret) throw new Error("Missing ADMIN_PASSWORD or SESSION_SECRET");
+  if (!supabaseUrl || !supabaseKey) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  return { password, sessionSecret, supabaseUrl, supabaseKey };
+}
+
+function publicFileUrl(supabaseUrl, path) {
+  if (!path) return "/media/pdf-placeholder.svg";
+  return `${supabaseUrl}/storage/v1/object/public/${BUCKET}/${path}`;
+}
+
+async function supabaseRest(env, path, { method = "GET", body, headers = {}, rawBody } = {}) {
+  const { supabaseUrl, supabaseKey } = getConfig(env);
+  const response = await fetch(`${supabaseUrl}${path}`, {
+    method,
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      ...headers,
+    },
+    body: rawBody !== undefined ? rawBody : body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
   }
-  return { password, sessionSecret };
+  if (!response.ok) {
+    const message =
+      (data && (data.message || data.error || data.error_description)) ||
+      `Supabase error (${response.status})`;
+    const err = new Error(message);
+    err.status = response.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
 }
 
 async function createSessionToken(sessionSecret) {
@@ -113,9 +150,11 @@ function clientIp(request) {
 
 async function checkLoginAllowed(env, ip) {
   const now = new Date().toISOString();
-  const row = await env.DB.prepare("SELECT fail_count, window_start, locked_until FROM login_attempts WHERE ip = ?")
-    .bind(ip)
-    .first();
+  const rows = await supabaseRest(
+    env,
+    `/rest/v1/login_attempts?ip=eq.${encodeURIComponent(ip)}&select=fail_count,window_start,locked_until`
+  );
+  const row = Array.isArray(rows) ? rows[0] : null;
   if (!row) return { ok: true };
   if (row.locked_until && row.locked_until > now) {
     return { ok: false, retryAfter: row.locked_until };
@@ -126,13 +165,14 @@ async function checkLoginAllowed(env, ip) {
 async function registerLoginFailure(env, ip) {
   const nowMs = Date.now();
   const now = new Date(nowMs).toISOString();
-  const row = await env.DB.prepare("SELECT fail_count, window_start, locked_until FROM login_attempts WHERE ip = ?")
-    .bind(ip)
-    .first();
+  const rows = await supabaseRest(
+    env,
+    `/rest/v1/login_attempts?ip=eq.${encodeURIComponent(ip)}&select=fail_count,window_start`
+  );
+  const row = Array.isArray(rows) ? rows[0] : null;
 
   let failCount = 1;
   let windowStart = now;
-
   if (row) {
     const windowAge = nowMs - new Date(row.window_start).getTime();
     if (windowAge <= LOGIN_WINDOW_MS) {
@@ -144,44 +184,54 @@ async function registerLoginFailure(env, ip) {
   const lockedUntil =
     failCount >= LOGIN_MAX_FAILS ? new Date(nowMs + LOGIN_LOCK_MS).toISOString() : null;
 
-  await env.DB.prepare(
-    `INSERT INTO login_attempts (ip, fail_count, window_start, locked_until)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(ip) DO UPDATE SET
-       fail_count = excluded.fail_count,
-       window_start = excluded.window_start,
-       locked_until = excluded.locked_until`
-  )
-    .bind(ip, failCount, windowStart, lockedUntil)
-    .run();
+  await supabaseRest(env, "/rest/v1/login_attempts", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: {
+      ip,
+      fail_count: failCount,
+      window_start: windowStart,
+      locked_until: lockedUntil,
+    },
+  });
 }
 
 async function clearLoginFailures(env, ip) {
-  await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ?").bind(ip).run();
+  await supabaseRest(env, `/rest/v1/login_attempts?ip=eq.${encodeURIComponent(ip)}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" },
+  });
 }
 
 async function issueCsrf(env, sessionId) {
   const token = crypto.randomUUID() + crypto.randomUUID();
   const expiresAt = new Date(Date.now() + CSRF_TTL_MS).toISOString();
-  await env.DB.prepare(
-    `INSERT INTO csrf_tokens (token, session_id, expires_at) VALUES (?, ?, ?)
-     ON CONFLICT(token) DO UPDATE SET session_id = excluded.session_id, expires_at = excluded.expires_at`
-  )
-    .bind(token, sessionId, expiresAt)
-    .run();
+  await supabaseRest(env, "/rest/v1/csrf_tokens", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: { token, session_id: sessionId, expires_at: expiresAt },
+  });
   return token;
 }
 
 async function consumeCsrf(env, sessionId, token) {
   if (!token) return false;
   const now = new Date().toISOString();
-  const row = await env.DB.prepare(
-    "SELECT token FROM csrf_tokens WHERE token = ? AND session_id = ? AND expires_at >= ?"
-  )
-    .bind(token, sessionId, now)
-    .first();
-  if (!row) return false;
-  await env.DB.prepare("DELETE FROM csrf_tokens WHERE token = ?").bind(token).run();
+  const rows = await supabaseRest(
+    env,
+    `/rest/v1/csrf_tokens?token=eq.${encodeURIComponent(token)}&session_id=eq.${encodeURIComponent(sessionId)}&expires_at=gte.${encodeURIComponent(now)}&select=token`
+  );
+  if (!Array.isArray(rows) || !rows.length) return false;
+  await supabaseRest(env, `/rest/v1/csrf_tokens?token=eq.${encodeURIComponent(token)}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" },
+  });
   return true;
 }
 
@@ -199,48 +249,63 @@ function safeFilename(name) {
 }
 
 async function requireAdmin(request, env) {
-  const { sessionSecret } = getSecrets(env);
+  const { sessionSecret } = getConfig(env);
   const cookies = parseCookies(request.headers.get("cookie") || "");
   const session = await verifySessionToken(cookies[SESSION_COOKIE], sessionSecret);
   if (!session) return { ok: false, response: json({ error: "No autorizado" }, 401) };
   return { ok: true, session };
 }
 
-async function listPublications(env) {
-  const { results } = await env.DB.prepare(
-    `SELECT id, title, description, created_at, updated_at, pdf_key, thumb_key, pdf_filename
-     FROM publications
-     ORDER BY created_at DESC, title ASC`
-  ).all();
-  return (results || []).map((row) => ({
+function mapPublication(row, supabaseUrl) {
+  return {
     id: row.id,
     title: row.title,
     description: row.description,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    pdfUrl: `/api/files/${encodeURIComponent(row.pdf_key)}`,
-    thumbUrl: row.thumb_key
-      ? `/api/files/${encodeURIComponent(row.thumb_key)}`
+    pdfUrl: publicFileUrl(supabaseUrl, row.pdf_path),
+    thumbUrl: row.thumb_path
+      ? publicFileUrl(supabaseUrl, row.thumb_path)
       : "/media/pdf-placeholder.svg",
     pdfFilename: row.pdf_filename,
-  }));
+  };
 }
 
-async function handleFile(request, env, key) {
-  if (!key) return badRequest("Archivo no encontrado", 404);
-  const object = await env.DOCS.get(key);
-  if (!object) return badRequest("Archivo no encontrado", 404);
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("etag", object.httpEtag);
-  headers.set("cache-control", "public, max-age=3600");
-  if (!headers.has("content-type")) {
-    headers.set("content-type", key.endsWith(".pdf") ? "application/pdf" : "application/octet-stream");
-  }
-  if (key.endsWith(".pdf")) {
-    headers.set("content-disposition", `inline; filename="${safeFilename(key.split("/").pop())}"`);
-  }
-  return new Response(object.body, { headers });
+async function listPublications(env) {
+  const { supabaseUrl } = getConfig(env);
+  const rows = await supabaseRest(
+    env,
+    "/rest/v1/publications?select=id,title,description,created_at,updated_at,pdf_path,thumb_path,pdf_filename&order=created_at.desc,title.asc"
+  );
+  return (rows || []).map((row) => mapPublication(row, supabaseUrl));
+}
+
+async function uploadToStorage(env, path, file, contentType) {
+  const bytes = await file.arrayBuffer();
+  await supabaseRest(env, `/storage/v1/object/${BUCKET}/${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": contentType || file.type || "application/octet-stream",
+      "x-upsert": "true",
+    },
+    rawBody: bytes,
+  });
+}
+
+async function deleteFromStorage(env, path) {
+  if (!path) return;
+  await supabaseRest(env, `/storage/v1/object/${BUCKET}`, {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: { prefixes: [path] },
+  }).catch(async () => {
+    // fallback API shape
+    await supabaseRest(env, `/storage/v1/object/${BUCKET}`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: [path],
+    });
+  });
 }
 
 async function handleLogin(request, env) {
@@ -258,7 +323,7 @@ async function handleLogin(request, env) {
   }
 
   const password = String(body.password || "");
-  const { password: expected, sessionSecret } = getSecrets(env);
+  const { password: expected, sessionSecret } = getConfig(env);
   const [gotHash, expectedHash] = await Promise.all([sha256Hex(password), sha256Hex(expected)]);
 
   if (!timingSafeEqual(gotHash, expectedHash)) {
@@ -314,27 +379,33 @@ async function handleCreate(request, env) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const pdfName = safeFilename(pdf.name || `${id}.pdf`);
-  const pdfKey = `pdfs/${id}/${pdfName}`;
-  await env.DOCS.put(pdfKey, pdf.stream(), {
-    httpMetadata: { contentType: "application/pdf" },
-  });
+  const pdfPath = `pdfs/${id}/${pdfName}`;
+  await uploadToStorage(env, pdfPath, pdf, "application/pdf");
 
-  let thumbKey = null;
+  let thumbPath = null;
   if (thumb && typeof thumb !== "string" && thumb.size) {
     const thumbName = safeFilename(thumb.name || `${id}-thumb.png`);
-    thumbKey = `thumbs/${id}/${thumbName}`;
-    await env.DOCS.put(thumbKey, thumb.stream(), {
-      httpMetadata: { contentType: thumb.type || "image/png" },
-    });
+    thumbPath = `thumbs/${id}/${thumbName}`;
+    await uploadToStorage(env, thumbPath, thumb, thumb.type || "image/png");
   }
 
-  await env.DB.prepare(
-    `INSERT INTO publications
-      (id, title, description, created_at, updated_at, pdf_key, thumb_key, pdf_filename)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(id, title, description, now, now, pdfKey, thumbKey, pdfName)
-    .run();
+  await supabaseRest(env, "/rest/v1/publications", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: {
+      id,
+      title,
+      description,
+      created_at: now,
+      updated_at: now,
+      pdf_path: pdfPath,
+      thumb_path: thumbPath,
+      pdf_filename: pdfName,
+    },
+  });
 
   const csrfNext = await issueCsrf(env, auth.session.sessionId);
   return json({ ok: true, id, csrf: csrfNext });
@@ -359,17 +430,24 @@ async function handleUpdate(request, env, id) {
   const description = sanitizeText(body.description, 800);
   if (!title) return badRequest("El título es obligatorio");
 
-  const existing = await env.DB.prepare("SELECT id FROM publications WHERE id = ?").bind(id).first();
-  if (!existing) return badRequest("Publicación no encontrada", 404);
+  const rows = await supabaseRest(
+    env,
+    `/rest/v1/publications?id=eq.${encodeURIComponent(id)}&select=id`
+  );
+  if (!Array.isArray(rows) || !rows.length) return badRequest("Publicación no encontrada", 404);
 
-  const now = new Date().toISOString();
-  await env.DB.prepare(
-    `UPDATE publications
-     SET title = ?, description = ?, updated_at = ?
-     WHERE id = ?`
-  )
-    .bind(title, description, now, id)
-    .run();
+  await supabaseRest(env, `/rest/v1/publications?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: {
+      "content-type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: {
+      title,
+      description,
+      updated_at: new Date().toISOString(),
+    },
+  });
 
   const csrfNext = await issueCsrf(env, auth.session.sessionId);
   return json({ ok: true, csrf: csrfNext });
@@ -390,17 +468,20 @@ async function handleDelete(request, env, id) {
     return json({ error: "Token CSRF inválido" }, 403);
   }
 
-  const row = await env.DB.prepare(
-    "SELECT pdf_key, thumb_key FROM publications WHERE id = ?"
-  )
-    .bind(id)
-    .first();
+  const rows = await supabaseRest(
+    env,
+    `/rest/v1/publications?id=eq.${encodeURIComponent(id)}&select=pdf_path,thumb_path`
+  );
+  const row = Array.isArray(rows) ? rows[0] : null;
   if (!row) return badRequest("Publicación no encontrada", 404);
 
-  await env.DB.prepare("DELETE FROM publications WHERE id = ?").bind(id).run();
-  const deletes = [env.DOCS.delete(row.pdf_key)];
-  if (row.thumb_key) deletes.push(env.DOCS.delete(row.thumb_key));
-  await Promise.all(deletes);
+  await supabaseRest(env, `/rest/v1/publications?id=eq.${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" },
+  });
+
+  await deleteFromStorage(env, row.pdf_path);
+  if (row.thumb_path) await deleteFromStorage(env, row.thumb_path);
 
   const csrfNext = await issueCsrf(env, auth.session.sessionId);
   return json({ ok: true, csrf: csrfNext });
@@ -414,11 +495,6 @@ async function handleApi(request, env) {
   if (pathname === "/api/publications" && method === "GET") {
     const items = await listPublications(env);
     return json({ items });
-  }
-
-  if (pathname.startsWith("/api/files/")) {
-    const key = decodeURIComponent(pathname.slice("/api/files/".length));
-    return handleFile(request, env, key);
   }
 
   if (pathname === "/api/admin/login" && method === "POST") {
@@ -466,7 +542,7 @@ export default {
       }
     } catch (error) {
       console.error(error);
-      return json({ error: "Error interno del servidor" }, 500);
+      return json({ error: error.message || "Error interno del servidor" }, error.status || 500);
     }
 
     if (env.ASSETS) {

@@ -1,4 +1,9 @@
 # Copy to .dev.vars for local `wrangler dev`
 # Never commit real secrets.
+
 ADMIN_PASSWORD=change-me-strong-password
 SESSION_SECRET=change-me-long-random-string
+
+# From Supabase Project Settings → API
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key

@@ -8,6 +8,7 @@ node_modules
 migrations
 scripts
 src
+supabase
 package.json
 package-lock.json
 wrangler.jsonc
@@ -15,3 +16,4 @@ wrangler.jsonc
 Memo*
 *.docx
 .DS_Store
+README.md
