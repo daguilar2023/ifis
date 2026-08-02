@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "IFIS Consultores website with publications admin",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --port 8787 --ip 127.0.0.1 --persist-to /tmp/ifis-wrangler-state",
     "deploy": "wrangler deploy",
     "seed": "node scripts/seed-publications.mjs"
   },
