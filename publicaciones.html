@@ -6,8 +6,8 @@
     <title>IFIS</title>
     <meta name="description" content="Publicaciones y recursos técnicos de IFIS." />
     <link rel="stylesheet" href="styles.css" />
-      <link rel="icon" type="image/png" href="media/logo-bg.png" />
-</head>
+    <link rel="icon" type="image/png" href="media/logo-bg.png" />
+  </head>
   <body data-page="publicaciones">
     <header class="site-header">
       <div class="header-inner">
@@ -31,35 +31,16 @@
     </header>
 
     <main class="main-content">
-      <section class="section">
+      <section class="section reveal-section">
         <h1 class="section-title">Publicaciones</h1>
         <p class="section-intro">
           Aquí encontrará material técnico y de divulgación desarrollado por IFIS en auditoría, IFRS,
           información financiera y aseguramiento. Seleccione una publicación para abrir el documento en PDF.
         </p>
-        <div class="grid grid-2">
-          <article class="card publication-card">
-            <div>
-              <h3>IFRS 18 – Decisión de Agenda del Comité de Interpretaciones</h3>
-              <p class="card-meta">Informe IFIS sobre la decisión de agenda emitida por el Comité de Interpretaciones, marzo 2026.</p>
-              <a class="button-link" href="publicaciones/IFRS%2018%20-%20Decisi%C3%B3n%20de%20Agenda%20del%20Comit%C3%A9%20de%20Interpretaciones%20(marzo%202026)%20FINAL.pdf" target="_blank" rel="noopener noreferrer">Abrir PDF</a>
-            </div>
-            <div class="publication-card-preview">
-              <img src="media/thumbs/ifrs18-agenda-thumb.png" alt="First page of IFRS 18 committee agenda PDF" />
-            </div>
-          </article>
-          <article class="card publication-card">
-            <div>
-              <h3>IFRS 18 – Medidas del Rendimiento Definidas por la Gerencia</h3>
-              <p class="card-meta">Guía IFIS sobre la presentación de medidas de rendimiento definidas por la gerencia.</p>
-              <a class="button-link" href="publicaciones/IFRS%2018%20-%20Medidas%20del%20Rendimiento%20Definidas%20por%20la%20Gerencia%20FINAL%20IFIS%20(Sexta%20Entrega).pdf" target="_blank" rel="noopener noreferrer">Abrir PDF</a>
-            </div>
-            <div class="publication-card-preview">
-              <img src="media/thumbs/ifrs18-rendimiento-thumb.png" alt="First page of IFRS 18 performance measures PDF" />
-            </div>
-          </article>
+        <div id="publicationsGrid" class="grid grid-2" aria-live="polite">
+          <p class="card-meta">Cargando publicaciones…</p>
         </div>
-        <p class="pill">Haga clic en una publicación para abrir el documento en PDF.</p>
+        <p class="pill">Haga clic en Abrir PDF para ver el documento.</p>
       </section>
     </main>
 

@@ -355,6 +355,19 @@ body[data-page="soluciones"] .card {
   grid-template-columns: minmax(0, 1fr) 220px;
   gap: 20px;
   align-items: start;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.publication-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(17, 75, 95, 0.12);
+}
+
+.publication-date {
+  margin: 0 0 8px;
+  color: #6b7c86;
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
 .publication-card-preview {
@@ -654,5 +667,45 @@ body[data-page="soluciones"] .card {
 
   .footer-inner {
     flex-direction: column;
+  }
+}
+
+/* Soft page-load / section entrance motion */
+.js-ready .reveal-section,
+.js-ready .reveal-card,
+.js-ready .main-content > .hero,
+.js-ready .main-content > .section {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.55s ease, transform 0.55s ease;
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.js-ready body.is-loaded .reveal-section,
+.js-ready body.is-loaded .reveal-card,
+.js-ready body.is-loaded .main-content > .hero,
+.js-ready body.is-loaded .main-content > .section {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.card,
+.button-link,
+.site-nav a {
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js-ready .reveal-section,
+  .js-ready .reveal-card,
+  .js-ready .main-content > .hero,
+  .js-ready .main-content > .section,
+  .publication-card,
+  .card,
+  .button-link,
+  .site-nav a {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
   }
 }

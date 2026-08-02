@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Publicaciones | IFIS</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/admin/admin.css" />
+    <link rel="icon" type="image/png" href="/media/logo-bg.png" />
+  </head>
+  <body class="admin-body" data-page="admin">
+    <main class="admin-shell">
+      <section id="loginView" class="admin-card admin-login">
+        <h1>Administración IFIS</h1>
+        <p>Acceso privado para gestionar publicaciones.</p>
+        <form id="loginForm" class="admin-form">
+          <label>
+            Contraseña
+            <input type="password" name="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit" class="button-link">Ingresar</button>
+          <p id="loginError" class="admin-error" hidden></p>
+        </form>
+      </section>
+
+      <section id="dashboardView" class="admin-dashboard" hidden>
+        <header class="admin-header">
+          <div>
+            <h1>Publicaciones</h1>
+            <p>Suba, edite o elimine documentos. Los cambios aparecen en el sitio público.</p>
+          </div>
+          <div class="admin-header-actions">
+            <a class="text-link" href="/publicaciones.html" target="_blank" rel="noopener">Ver sitio</a>
+            <button type="button" id="logoutBtn" class="button-link button-secondary">Cerrar sesión</button>
+          </div>
+        </header>
+
+        <section class="admin-card">
+          <h2>Subir nueva publicación</h2>
+          <form id="uploadForm" class="admin-form">
+            <label>
+              Título
+              <input type="text" name="title" maxlength="200" required />
+            </label>
+            <label>
+              Descripción
+              <textarea name="description" rows="3" maxlength="800"></textarea>
+            </label>
+            <label>
+              Archivo PDF
+              <input type="file" name="pdf" accept="application/pdf,.pdf" required />
+            </label>
+            <label>
+              Imagen de vista previa (opcional)
+              <input type="file" name="thumb" accept="image/*" />
+            </label>
+            <button type="submit" class="button-link">Subir documento</button>
+            <p id="uploadStatus" class="admin-status" hidden></p>
+          </form>
+        </section>
+
+        <section class="admin-card">
+          <h2>Documentos publicados</h2>
+          <div id="adminList" class="admin-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <div id="confirmModal" class="admin-modal" hidden>
+      <div class="admin-modal-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <h3 id="confirmTitle">Confirmar eliminación</h3>
+        <p id="confirmText">¿Seguro que desea eliminar esta publicación? Esta acción no se puede deshacer.</p>
+        <div class="admin-modal-actions">
+          <button type="button" id="confirmCancel" class="button-link button-secondary">Cancelar</button>
+          <button type="button" id="confirmDelete" class="button-link button-danger">Eliminar</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/admin/admin.js"></script>
+  </body>
+</html>

@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local `wrangler dev`
+# Never commit real secrets.
+ADMIN_PASSWORD=change-me-strong-password
+SESSION_SECRET=change-me-long-random-string

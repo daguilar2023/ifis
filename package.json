@@ -1,0 +1,17 @@
+{
+  "name": "ifis-web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "IFIS Consultores website with publications admin",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply ifis-publications --local",
+    "db:migrate:remote": "wrangler d1 migrations apply ifis-publications --remote",
+    "seed:local": "node scripts/seed-publications.mjs --local",
+    "seed:remote": "node scripts/seed-publications.mjs --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.20.0"
+  }
+}

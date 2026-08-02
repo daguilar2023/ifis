@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="560" viewBox="0 0 440 560" role="img" aria-label="Vista previa de PDF">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#edf4f7"/>
+      <stop offset="100%" stop-color="#d7e6ee"/>
+    </linearGradient>
+  </defs>
+  <rect width="440" height="560" rx="18" fill="url(#g)"/>
+  <rect x="48" y="56" width="344" height="448" rx="12" fill="#ffffff" stroke="#c9d7e0"/>
+  <rect x="78" y="98" width="180" height="18" rx="6" fill="#114b5f"/>
+  <rect x="78" y="136" width="260" height="10" rx="5" fill="#d5e0e6"/>
+  <rect x="78" y="158" width="240" height="10" rx="5" fill="#d5e0e6"/>
+  <rect x="78" y="180" width="210" height="10" rx="5" fill="#d5e0e6"/>
+  <rect x="78" y="220" width="284" height="10" rx="5" fill="#e7eef2"/>
+  <rect x="78" y="242" width="284" height="10" rx="5" fill="#e7eef2"/>
+  <rect x="78" y="264" width="250" height="10" rx="5" fill="#e7eef2"/>
+  <rect x="78" y="286" width="270" height="10" rx="5" fill="#e7eef2"/>
+  <circle cx="330" cy="430" r="42" fill="#d1a955"/>
+  <text x="330" y="438" text-anchor="middle" font-family="Manrope, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b3341">PDF</text>
+</svg>
