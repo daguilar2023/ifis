@@ -76,6 +76,20 @@ function titleFromFilename(name) {
   return name.replace(/\.pdf$/i, "").replace(/\s+/g, " ").trim();
 }
 
+function storageSafeName(name) {
+  const ext = extname(name) || ".pdf";
+  const base = name
+    .normalize("NFC")
+    .replace(ext, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+  return `${base || "document"}${ext.toLowerCase()}`;
+}
+
 async function supabase(path, { method = "GET", headers = {}, body, rawBody } = {}) {
   const response = await fetch(`${SUPABASE_URL}${path}`, {
     method,
@@ -138,7 +152,7 @@ async function main() {
       DESCRIPTIONS[actual] ||
       DESCRIPTIONS[file] ||
       "Publicación técnica de IFIS Consultores Auditores.";
-    const pdfPath = `pdfs/${id}/${actual}`;
+    const pdfPath = `pdfs/${id}/${storageSafeName(actual)}`;
 
     console.log(`- ${actual}`);
     await uploadObject(pdfPath, absActual, "application/pdf");
@@ -148,7 +162,7 @@ async function main() {
     if (thumbFile) {
       const thumbAbs = join(thumbsDir, thumbFile);
       if (existsSync(thumbAbs)) {
-        thumbPath = `thumbs/${id}/${thumbFile}`;
+        thumbPath = `thumbs/${id}/${storageSafeName(thumbFile)}`;
         await uploadObject(thumbPath, thumbAbs, "image/png");
       }
     }

@@ -243,9 +243,18 @@ function sanitizeText(value, max = 500) {
 }
 
 function safeFilename(name) {
-  return String(name || "document.pdf")
-    .replace(/[^\w.\- ()áéíóúÁÉÍÓÚñÑ]+/g, "_")
-    .slice(0, 180);
+  const raw = String(name || "document.pdf");
+  const extMatch = raw.match(/\.[A-Za-z0-9]+$/);
+  const ext = (extMatch ? extMatch[0] : ".pdf").toLowerCase();
+  const base = raw
+    .replace(/\.[A-Za-z0-9]+$/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+  return `${base || "document"}${ext}`;
 }
 
 async function requireAdmin(request, env) {
