@@ -92,6 +92,13 @@
   font-weight: 600;
 }
 
+.admin-hint {
+  margin: -4px 0 0;
+  color: #5a5a5a;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .admin-list {
   display: grid;
   gap: 14px;

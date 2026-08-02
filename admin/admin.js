@@ -102,6 +102,40 @@
 
   const escapeAttr = (value) => escapeHtml(value).replaceAll("`", "&#96;");
 
+  const ensurePdfJs = () => {
+    if (!window.pdfjsLib) {
+      throw new Error("No se pudo cargar el generador de vista previa PDF");
+    }
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    return window.pdfjsLib;
+  };
+
+  const generatePdfThumbnail = async (pdfFile) => {
+    const pdfjsLib = ensurePdfJs();
+    const data = await pdfFile.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data }).promise;
+    const page = await pdf.getPage(1);
+    const unscaled = page.getViewport({ scale: 1 });
+    const targetWidth = 440;
+    const scale = targetWidth / unscaled.width;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d", { alpha: false });
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((result) => {
+        if (result) resolve(result);
+        else reject(new Error("No se pudo crear la imagen de vista previa"));
+      }, "image/png");
+    });
+    return new File([blob], "preview.png", { type: "image/png" });
+  };
+
   const loadPublications = async () => {
     const data = await api("/api/admin/publications");
     setCsrf(data.csrf);
@@ -151,16 +185,37 @@
   uploadForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     uploadStatus.hidden = true;
+    uploadStatus.style.color = "";
     const formData = new FormData(uploadForm);
     formData.set("csrf", csrf);
+
+    const pdf = formData.get("pdf");
+    const thumb = formData.get("thumb");
+    const hasManualThumb = thumb && typeof thumb !== "string" && thumb.size > 0;
+
     try {
+      uploadStatus.textContent = hasManualThumb
+        ? "Subiendo documento…"
+        : "Generando vista previa de la primera página…";
+      uploadStatus.hidden = false;
+
+      if (!hasManualThumb) {
+        if (!pdf || typeof pdf === "string" || !pdf.size) {
+          throw new Error("Debe adjuntar un PDF");
+        }
+        const preview = await generatePdfThumbnail(pdf);
+        formData.set("thumb", preview, "preview.png");
+      }
+
+      uploadStatus.textContent = "Subiendo documento…";
       const data = await api("/api/admin/publications", {
         method: "POST",
         body: formData,
       });
       setCsrf(data.csrf);
       uploadForm.reset();
-      uploadStatus.textContent = "Documento subido correctamente.";
+      uploadStatus.textContent = "Documento subido correctamente (con vista previa).";
+      uploadStatus.style.color = "#125048";
       uploadStatus.hidden = false;
       await loadPublications();
     } catch (error) {

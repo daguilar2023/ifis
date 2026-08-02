@@ -51,6 +51,10 @@
               Archivo PDF
               <input type="file" name="pdf" accept="application/pdf,.pdf" required />
             </label>
+            <p class="admin-hint">
+              La vista previa de la primera página se genera automáticamente al subir el PDF.
+              Solo use el campo de imagen si quiere reemplazarla manualmente.
+            </p>
             <label>
               Imagen de vista previa (opcional)
               <input type="file" name="thumb" accept="image/*" />
@@ -78,6 +82,7 @@
       </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="/admin/admin.js"></script>
   </body>
 </html>
